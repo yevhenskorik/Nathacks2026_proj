@@ -1,20 +1,31 @@
 """Edmonton time, plus the helpers the RA page uses for 'how long has this been open'."""
+import os
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
-TZ_NAME = "America/Edmonton"
+TZ_NAME = "America/Edmonton"  # for reference only. The code below does not look it up.
 
-# Used only if the time zone database is missing (common on Windows until you run
-# "python -m pip install tzdata"). UTC-6 is Edmonton's offset right now. Change it if that ever changes.
-FALLBACK_HOURS = -6
+# Edmonton is UTC-6 for the whole event (Nov 6 to 9, 2026). A fixed offset needs no time zone
+# database, so a laptop and the cloud server can never disagree. If it is ever wrong, change
+# DEFAULT_OFFSET_HOURS, or set TIME_OFFSET_HOURS in secrets or the environment (for example -7).
+DEFAULT_OFFSET_HOURS = -6
 
-try:
-    from zoneinfo import ZoneInfo
 
-    LOCAL_TZ = ZoneInfo(TZ_NAME)
-except Exception:  # no time zone database installed
-    LOCAL_TZ = timezone(timedelta(hours=FALLBACK_HOURS))
+def _offset_hours():
+    try:
+        import streamlit as st
+
+        value = st.secrets["TIME_OFFSET_HOURS"]
+    except Exception:
+        value = os.environ.get("TIME_OFFSET_HOURS")
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return DEFAULT_OFFSET_HOURS
+
+
+LOCAL_TZ = timezone(timedelta(hours=_offset_hours()))
 
 # How long an OPEN report may wait before it is flagged overdue (minutes)
 OVERDUE_AFTER_MIN = {"High": 15, "Medium": 120, "Low": 1440}
