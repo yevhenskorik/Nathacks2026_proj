@@ -117,6 +117,7 @@ def _get_client():
     key = _secret("ANTHROPIC_API_KEY")
     if not key:
         return None
+    
     import anthropic
 
     return anthropic.Anthropic(api_key=key, timeout=TIMEOUT_SECONDS, max_retries=1)
