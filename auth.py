@@ -25,6 +25,8 @@ import secrets
 
 import streamlit as st
 
+from ui import apply_theme, notice, page_title, site_footer
+
 USERS_TABLE = "users"
 USERNAME_PATTERN = re.compile(r"^[a-z0-9_]{3,20}$")
 MIN_PASSWORD_LENGTH = 6
@@ -160,7 +162,7 @@ def _render_sign_in_tab():
     with st.form("login_form", clear_on_submit=False):
         username = st.text_input("Username", placeholder="")
         password = st.text_input("Password", type="password")
-        submitted = st.form_submit_button("Sign in", use_container_width=True)
+        submitted = st.form_submit_button("Sign in", type="primary", use_container_width=True)
 
     if not submitted:
         return
@@ -195,7 +197,7 @@ def _render_register_tab():
     if role_label == "RA":
         invite_code = st.text_input("RA invite code", type="password", key="reg_invite")
 
-    if st.button("Create account", use_container_width=True, key="reg_submit"):
+    if st.button("Create account", type="primary", use_container_width=True, key="reg_submit"):
         if not username or not password:
             st.warning("Enter a username and a password.")
         elif password != confirm:
@@ -216,78 +218,47 @@ def _render_register_tab():
 
 def show_login():
     """Render the sign in and registration tabs. Sets st.session_state['user'] on login."""
+    apply_theme("560px")  # same green and gold look as both dashboards
     st.markdown(
         """
         <style>
-        /* Area outside the login block. Change this color to restyle it. */
-        .stApp,
-        [data-testid="stAppViewContainer"],
-        [data-testid="stMain"] {
-            background-color: #ededed !important;
-        }
-        [data-testid="stHeader"] { background: transparent !important; }
+        /* The card already frames the form, so drop the form's own border */
+        [data-testid="stForm"] { border: 0 !important; padding: 0 !important; }
+        .stApp [data-testid="stTextInputRootElement"] { border-radius: 0 !important; }
 
-        /* Login block, moved toward the center of the page */
-        .block-container {
-            max-width: 440px !important;
-            margin-top: 12vh !important;
-            margin-bottom: 100px !important;
-            padding: 2rem 2rem 2.5rem 2rem !important;
-            background-color: #ffffff;
-            border-radius: 0;
-            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+        /* Sign in button and tabs in the same green as the dashboards */
+        .stApp [data-testid="stBaseButton-primaryFormSubmit"],
+        .stApp button[kind="primaryFormSubmit"] {
+            background-color: #275D38; border: 1px solid #275D38; color: #FFFFFF;
+            border-radius: 0 !important; font-weight: 700;
+            letter-spacing: 0.06em; text-transform: uppercase; padding: 0.6rem 1.2rem;
         }
-
-        /* Green borders across the top and bottom of the login page */
-        .stApp::before,
-        .stApp::after {
-            content: "";
-            position: fixed;
-            left: 0;
-            right: 0;
-            height: 60px;
-            background: #275d38;
-            z-index: 999999;
-            pointer-events: none;
+        .stApp [data-testid="stBaseButton-primaryFormSubmit"]:hover,
+        .stApp button[kind="primaryFormSubmit"]:hover {
+            background-color: #1D4529; border-color: #1D4529; color: #FFFFFF;
         }
-        .stApp::before { top: 0; }
-        .stApp::after { bottom: 0; }
-
-        /* Input bars and buttons: light blue fill with black text */
-        .stTextInput div[data-baseweb="input"],
-        .stTextInput div[data-baseweb="input"] div,
-        .stTextInput div[data-baseweb="base-input"],
-        .stTextInput [data-testid="stTextInputRootElement"],
-        .stTextInput [data-testid="stTextInputRootElement"] div,
-        .stTextInput input,
-        .stTextInput button {
-            background-color: #e8f0fe !important;
-            color: #000000 !important;
-        }
-        .stTextInput input::placeholder { color: #555555 !important; }
-        .stTextInput button svg { fill: #000000 !important; }
-
-        .stFormSubmitButton button,
-        .stButton button {
-            background-color: #e8f0fe !important;
-            color: #000000 !important;
-            border: 1px solid #b9c9e6 !important;
-        }
-        .stFormSubmitButton button p,
-        .stButton button p { color: #000000 !important; }
+        .stApp [data-baseweb="tab-highlight"],
+        .stApp .react-aria-SelectionIndicator { background-color: #275D38 !important; }
+        .stApp [data-testid="stTab"][aria-selected="true"],
+        .stApp [data-testid="stTab"][aria-selected="true"] p { color: #275D38 !important; }
+        .stApp button[data-baseweb="tab"][aria-selected="true"],
+        .stApp button[data-baseweb="tab"][aria-selected="true"] p { color: #275D38 !important; }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
-    st.title("RA On-Shift Helper")
+    page_title("RA On-Shift Helper", "Sign in to report an issue or review reports.")
+    notice("In an emergency, call <b>911</b>. This app is not watched in real time.")
 
-    sign_in_tab, register_tab = st.tabs(["Sign in", "Create account"])
-    with sign_in_tab:
-        _render_sign_in_tab()
-    with register_tab:
-        _render_register_tab()
+    with st.container(key="card_login"):
+        sign_in_tab, register_tab = st.tabs(["Sign in", "Create account"])
+        with sign_in_tab:
+            _render_sign_in_tab()
+        with register_tab:
+            _render_register_tab()
 
+    site_footer()
 
 
 def require_login(allowed_roles=None):
