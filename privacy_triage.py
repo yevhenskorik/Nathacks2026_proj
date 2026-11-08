@@ -2,7 +2,7 @@ import re
 
 
 def process_incident(raw_text):
-  # 1. Scrub phone numbers, emails, and 7-digit student IDs, but KEEP room numbers
+  # 1. Remove phone numbers, emails and 7-digit student IDs (room numbers stay)
   scrubbed = re.sub(
       r'\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b', '[PHONE REDACTED]', raw_text
   )
@@ -14,16 +14,8 @@ def process_incident(raw_text):
   if any(
       word in text_lower
       for word in [
-          'fire',
-          'door',
-          'propped',
-          'stranger',
-          'smoke',
-          'unlocked',
-          'glass',
-          'wire',
-          'flickering',
-          'tripping',
+          'fire', 'door', 'propped', 'stranger', 'smoke',
+          'unlocked', 'glass', 'wire', 'flickering', 'tripping',
       ]
   ):
     category = 'Urgent Safety'
@@ -31,21 +23,14 @@ def process_incident(raw_text):
   elif any(
       word in text_lower
       for word in [
-          'leak',
-          'broken',
-          'light',
-          'heat',
-          'water',
-          'elevator',
-          'drain',
-          'chute',
-          'latch',
+          'leak', 'broken', 'light', 'heat', 'water',
+          'elevator', 'drain', 'chute', 'latch',
       ]
   ):
     category = 'Maintenance'
     urgency = 'Medium'
   else:
-    category = 'RA Next-Shift (Noise/Policy)'
+    category = 'Noise/Policy'
     urgency = 'Low'
 
   return {'scrubbed_text': scrubbed, 'category': category, 'urgency': urgency}
