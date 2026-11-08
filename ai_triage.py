@@ -55,8 +55,17 @@ SELF_HARM_PATTERNS = [
     r"suicid", r"kill myself", r"end my life", r"want to die", r"hurt myself",
     r"self[- ]?harm", r"overdos",
 ]
+MEDICAL_PATTERNS = [
+    r"can'?t breathe", r"cannot breathe", r"can ?not breathe", r"unable to breathe",
+    r"trouble breathing", r"hard to breathe", r"not breathing", r"stopped breathing",
+    r"\b(i'?m|im|i am) dying\b", r"\b(he|she|they)('?s| is| are) dying\b", r"someone is dying",
+    r"unconscious", r"unresponsive", r"passed out", r"collapsed", r"won'?t wake up",
+    r"chest pain", r"heart attack", r"seizure", r"choking", r"allergic reaction", r"anaphyla",
+    r"bleeding (a lot|badly|heavily)",
+]
 DANGER_PATTERNS = [
-    r"following me", r"followed me", r"assault", r"attacked me", r"afraid for my life",
+    r"following me", r"followed me", r"being followed", r"being stalked", r"stalking me",
+    r"being chased", r"assault", r"attacked me", r"afraid for my life",
     r"threatened (me|to)", r"won'?t let me leave",
 ]
 
@@ -127,23 +136,36 @@ def _matches(text, patterns):
     return any(re.search(p, text.lower()) for p in patterns)
 
 
+def detect_distress(text):
+    """True if the text matches the safety-net word list. Works with no AI and no database column."""
+    text = text or ""
+    return _matches(text, SELF_HARM_PATTERNS) or _matches(text, MEDICAL_PATTERNS) or _matches(text, DANGER_PATTERNS)
+
+
 def _rules_triage(text, rules):
     """The no-AI answer, built from the keyword rules plus a small distress word list."""
     category = KEYWORD_CATEGORY.get(rules.get("category"), "noise")
     urgency = KEYWORD_URGENCY.get(rules.get("urgency"), 2)
     distress = False
+    responder = None
+    reason = "Sorted by keyword rules (AI not used for this report)."
     if _matches(text, SELF_HARM_PATTERNS):
         distress, category, urgency = True, "wellbeing", 5
+        reason = "Keyword safety net: mentions possible self-harm."
+    elif _matches(text, MEDICAL_PATTERNS):
+        distress, category, urgency, responder = True, "safety", 5, "RA"
+        reason = "Keyword safety net: possible medical emergency."
     elif _matches(text, DANGER_PATTERNS):
         distress, category, urgency = True, "safety", 5
+        reason = "Keyword safety net: mentions being followed, threatened or attacked."
     summary = " ".join(text.split())[:117] + ("..." if len(text) > 117 else "")
     return {
         "category": category,
         "urgency": urgency,
         "summary": summary,
-        "responder": DEFAULT_RESPONDER[category],
+        "responder": responder or DEFAULT_RESPONDER[category],
         "distress": distress,
-        "reason": "Sorted by keyword rules (AI not used for this report).",
+        "reason": reason,
     }
 
 
@@ -245,6 +267,24 @@ def _provider_order():
     return ["claude", "ollama"]  # auto: skips whichever is not available
 
 
+def _prepare_for_ai(text):
+    """Extra clean-up for the copy that goes to the AI. The RA still sees the room number
+    in the saved report; the AI does not need it to judge urgency.
+    Names cannot be removed reliably, so the form asks students to leave them out."""
+    text = re.sub(r"\b[\w.+-]+@[\w-]+(\.[\w-]+)+\b", "[EMAIL]", text)
+    text = re.sub(r"(\+?\d{1,2}[\s.-]?)?\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b", "[PHONE]", text)
+    text = re.sub(r"\b\d{7}\b", "[ID]", text)
+    text = re.sub(
+        r"\b\d{3,6}\s+(\d{1,3}\s*)?(st|street|ave|avenue|rd|road|blvd|drive|dr|way)\b\.?",
+        "[ADDRESS]", text, flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"\b(room|rm\.?|suite|unit|apt\.?|apartment)\s*#?\s*[A-Za-z]?\d{1,4}[A-Za-z]?\b",
+        "[ROOM]", text, flags=re.IGNORECASE,
+    )
+    return text
+
+
 def triage_report(scrubbed_text, place, rules):
     """Triage one report.
 
@@ -254,6 +294,7 @@ def triage_report(scrubbed_text, place, rules):
     """
     text = (scrubbed_text or "")[:MAX_CHARS]
     fallback = _rules_triage(text, rules)
+    ai_text = _prepare_for_ai(text)  # only this cleaned copy ever leaves the app
 
     result, source, errors = None, "Rules", []
     for provider in _provider_order():
@@ -262,11 +303,11 @@ def triage_report(scrubbed_text, place, rules):
                 client = _get_client()
                 if client is None:
                     continue
-                result, source = _clean(_call_ai(client, text, place)), "AI"
+                result, source = _clean(_call_ai(client, ai_text, place)), "AI"
             else:
                 if not _ollama_up():
                     continue
-                result, source = _clean(_call_ollama(text, place)), "Local AI"
+                result, source = _clean(_call_ollama(ai_text, place)), "Local AI"
             break
         except Exception as exc:  # a failed AI call must never block a report
             errors.append(f"{provider}: {type(exc).__name__}: {exc}")
