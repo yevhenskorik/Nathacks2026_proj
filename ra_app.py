@@ -96,7 +96,35 @@ def clean_text(value):
     return "" if value is None or pd.isna(value) else str(value).strip()
 
 
+<<<<<<< HEAD
 
+def resolve_report(row_id):
+    """Mark a report resolved, then re-read the database to be sure it really changed."""
+=======
+def get_passcode():
+    """The RA passcode lives in the app's secrets, never in the code."""
+>>>>>>> origin/renee-fixes
+    try:
+        update_status(row_id, "Resolved")
+    except Exception:
+        pass  # the check below reports the problem
+    fresh = load_data()
+    saved = len(fresh) and "id" in fresh.columns and (
+        fresh.loc[fresh["id"] == row_id, "status"] == "Resolved"
+    ).any()
+    if saved:
+        st.session_state["flash"] = ("ok", "Report marked as resolved.")
+    else:
+        st.session_state["flash"] = (
+            "error",
+            "The database did not save the change, so the report is still open. "
+            "This usually means the table has no UPDATE permission for the app "
+            "(row level security). Ask Yevhen to check the Supabase policies.",
+        )
+
+
+<<<<<<< HEAD
+=======
 def resolve_report(row_id):
     """Mark a report resolved, then re-read the database to be sure it really changed."""
     try:
@@ -118,10 +146,47 @@ def resolve_report(row_id):
         )
 
 
+>>>>>>> origin/renee-fixes
 page_title(
     "RA Shift Handoff",
     "Every report from residence, sorted by urgency. AI helps sort and flag. An RA reads every report and decides.",
 )
+<<<<<<< HEAD
+=======
+
+# --- PASSWORD PROTECTION GATE ---
+if "ra_authenticated" not in st.session_state:
+    st.session_state["ra_authenticated"] = False
+
+if not st.session_state["ra_authenticated"]:
+    _, middle, _ = st.columns([1, 1.4, 1])
+    with middle:
+        with st.container(key="card_login"):
+            st.subheader("Authorized personnel only")
+            passcode = get_passcode()
+            if passcode is None:
+                st.error(
+                    "No RA passcode is set. Add a line  RA_PASSWORD=\"...\"  to the app's "
+                    "secrets, then restart the app."
+                )
+            else:
+                entered_password = st.text_input("RA passcode", type="password")
+                if st.button("Log in", type="primary", key="login_btn"):
+                    if hmac.compare_digest(entered_password, passcode):
+                        st.session_state["ra_authenticated"] = True
+                        st.rerun()
+                    else:
+                        st.error("Incorrect passcode. Access denied.")
+    site_footer()
+    st.stop()
+
+# --- RA DASHBOARD (only loads after a successful login) ---
+top_left, top_right = st.columns([5, 1])
+top_left.caption("Signed in as Resident Advisor. This page checks for new reports every 10 seconds.")
+if top_right.button("Log out", key="logout_btn"):
+    st.session_state["ra_authenticated"] = False
+    st.rerun()
+>>>>>>> origin/renee-fixes
 
 # Auto-refresh the page every 10 seconds
 st_autorefresh(interval=10000, limit=None, key="ra_dashboard_refresh")
