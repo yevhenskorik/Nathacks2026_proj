@@ -19,10 +19,13 @@ Settings come from .streamlit/secrets.toml (SUPABASE_URL, SUPABASE_KEY, RA_INVIT
 
 import hashlib
 import hmac
+import json
 import re
 import secrets
 
 import streamlit as st
+
+from ui import apply_theme, notice, page_title, site_footer
 
 USERS_TABLE = "users"
 USERNAME_PATTERN = re.compile(r"^[a-z0-9_]{3,20}$")
@@ -159,7 +162,7 @@ def _render_sign_in_tab():
     with st.form("login_form", clear_on_submit=False):
         username = st.text_input("Username", placeholder="")
         password = st.text_input("Password", type="password")
-        submitted = st.form_submit_button("Sign in", use_container_width=True)
+        submitted = st.form_submit_button("Sign in", type="primary", use_container_width=True)
 
     if not submitted:
         return
@@ -194,7 +197,7 @@ def _render_register_tab():
     if role_label == "RA":
         invite_code = st.text_input("RA invite code", type="password", key="reg_invite")
 
-    if st.button("Create account", use_container_width=True, key="reg_submit"):
+    if st.button("Create account", type="primary", use_container_width=True, key="reg_submit"):
         if not username or not password:
             st.warning("Enter a username and a password.")
         elif password != confirm:
@@ -215,78 +218,47 @@ def _render_register_tab():
 
 def show_login():
     """Render the sign in and registration tabs. Sets st.session_state['user'] on login."""
+    apply_theme("560px")  # same green and gold look as both dashboards
     st.markdown(
         """
         <style>
-        /* Area outside the login block. Change this color to restyle it. */
-        .stApp,
-        [data-testid="stAppViewContainer"],
-        [data-testid="stMain"] {
-            background-color: #ededed !important;
-        }
-        [data-testid="stHeader"] { background: transparent !important; }
+        /* The card already frames the form, so drop the form's own border */
+        [data-testid="stForm"] { border: 0 !important; padding: 0 !important; }
+        .stApp [data-testid="stTextInputRootElement"] { border-radius: 0 !important; }
 
-        /* Login block, moved toward the center of the page */
-        .block-container {
-            max-width: 440px !important;
-            margin-top: 12vh !important;
-            margin-bottom: 100px !important;
-            padding: 2rem 2rem 2.5rem 2rem !important;
-            background-color: #ffffff;
-            border-radius: 0;
-            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+        /* Sign in button and tabs in the same green as the dashboards */
+        .stApp [data-testid="stBaseButton-primaryFormSubmit"],
+        .stApp button[kind="primaryFormSubmit"] {
+            background-color: #275D38; border: 1px solid #275D38; color: #FFFFFF;
+            border-radius: 0 !important; font-weight: 700;
+            letter-spacing: 0.06em; text-transform: uppercase; padding: 0.6rem 1.2rem;
         }
-
-        /* Green borders across the top and bottom of the login page */
-        .stApp::before,
-        .stApp::after {
-            content: "";
-            position: fixed;
-            left: 0;
-            right: 0;
-            height: 60px;
-            background: #275d38;
-            z-index: 999999;
-            pointer-events: none;
+        .stApp [data-testid="stBaseButton-primaryFormSubmit"]:hover,
+        .stApp button[kind="primaryFormSubmit"]:hover {
+            background-color: #1D4529; border-color: #1D4529; color: #FFFFFF;
         }
-        .stApp::before { top: 0; }
-        .stApp::after { bottom: 0; }
-
-        /* Input bars and buttons: light blue fill with black text */
-        .stTextInput div[data-baseweb="input"],
-        .stTextInput div[data-baseweb="input"] div,
-        .stTextInput div[data-baseweb="base-input"],
-        .stTextInput [data-testid="stTextInputRootElement"],
-        .stTextInput [data-testid="stTextInputRootElement"] div,
-        .stTextInput input,
-        .stTextInput button {
-            background-color: #e8f0fe !important;
-            color: #000000 !important;
-        }
-        .stTextInput input::placeholder { color: #555555 !important; }
-        .stTextInput button svg { fill: #000000 !important; }
-
-        .stFormSubmitButton button,
-        .stButton button {
-            background-color: #e8f0fe !important;
-            color: #000000 !important;
-            border: 1px solid #b9c9e6 !important;
-        }
-        .stFormSubmitButton button p,
-        .stButton button p { color: #000000 !important; }
+        .stApp [data-baseweb="tab-highlight"],
+        .stApp .react-aria-SelectionIndicator { background-color: #275D38 !important; }
+        .stApp [data-testid="stTab"][aria-selected="true"],
+        .stApp [data-testid="stTab"][aria-selected="true"] p { color: #275D38 !important; }
+        .stApp button[data-baseweb="tab"][aria-selected="true"],
+        .stApp button[data-baseweb="tab"][aria-selected="true"] p { color: #275D38 !important; }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
-    st.title("RA On-Shift Helper")
+    page_title("RA On-Shift Helper", "Sign in to report an issue or review reports.")
+    notice("In an emergency, call <b>911</b>. This app is not watched in real time.")
 
-    sign_in_tab, register_tab = st.tabs(["Sign in", "Create account"])
-    with sign_in_tab:
-        _render_sign_in_tab()
-    with register_tab:
-        _render_register_tab()
+    with st.container(key="card_login"):
+        sign_in_tab, register_tab = st.tabs(["Sign in", "Create account"])
+        with sign_in_tab:
+            _render_sign_in_tab()
+        with register_tab:
+            _render_register_tab()
 
+    site_footer()
 
 
 def require_login(allowed_roles=None):
@@ -309,6 +281,85 @@ def require_login(allowed_roles=None):
     return user
 
 
+# JavaScript that adds a three-bar menu button to the page. It opens and closes the
+# sidebar, so the Log out block always has a way back after it is hidden.
+_MENU_BUTTON_JS = r"""
+(function () {
+  var doc = document;
+  var host = window;
+  if (host.__raMenuButton) { return; }
+  host.__raMenuButton = true;
+
+  var style = doc.createElement('style');
+  style.textContent =
+    '#ra-menu-btn{position:fixed;top:76px;left:12px;z-index:1000001;width:42px;height:42px;' +
+    'display:none;flex-direction:column;justify-content:center;align-items:center;gap:5px;' +
+    'background:#275d38;border:0;border-radius:4px;cursor:pointer;padding:0;' +
+    'box-shadow:0 2px 6px rgba(0,0,0,0.25);}' +
+    '#ra-menu-btn span{display:block;width:22px;height:3px;background:#ffffff;border-radius:1px;}' +
+    '#ra-menu-btn:hover{background:#1d4a2c;}';
+  doc.head.appendChild(style);
+
+  var btn = doc.createElement('button');
+  btn.id = 'ra-menu-btn';
+  btn.type = 'button';
+  btn.setAttribute('aria-label', 'Open or close the menu');
+  btn.innerHTML = '<span></span><span></span><span></span>';
+  doc.body.appendChild(btn);
+
+  function find(selectors) {
+    for (var i = 0; i < selectors.length; i++) {
+      var el = doc.querySelector(selectors[i]);
+      if (el) { return el.tagName === 'BUTTON' ? el : (el.querySelector('button') || el); }
+    }
+    return null;
+  }
+
+  var EXPAND = ['[data-testid="stExpandSidebarButton"]',
+                '[data-testid="stSidebarCollapsedControl"]',
+                '[data-testid="collapsedControl"]'];
+  var COLLAPSE = ['[data-testid="stSidebarCollapseButton"]'];
+
+  btn.addEventListener('click', function () {
+    var sidebar = doc.querySelector('[data-testid="stSidebar"]');
+    var collapsed = !!sidebar && (sidebar.getAttribute('data-collapsed') === 'true' ||
+                                  sidebar.getAttribute('aria-expanded') === 'false');
+    var target = find(collapsed ? EXPAND : COLLAPSE) || find(collapsed ? COLLAPSE : EXPAND);
+    if (target) { target.click(); }
+  });
+
+  // Show the button only while the sidebar is hidden. The arrow inside the sidebar closes it again.
+  host.setInterval(function () {
+    var sidebar = doc.querySelector('[data-testid="stSidebar"]');
+    var signedIn = !!sidebar && sidebar.textContent.indexOf('Log out') !== -1;
+    var hidden = !!sidebar && (sidebar.getAttribute('data-collapsed') === 'true' ||
+                               sidebar.getAttribute('aria-expanded') === 'false');
+    btn.style.display = (signedIn && hidden) ? 'flex' : 'none';
+  }, 300);
+})();
+"""
+
+
+def _menu_button():
+    """Adds the three-bar menu button once. Needs no setup in the page files."""
+    import streamlit.components.v1 as components
+
+    # The code runs inside the main page, not the small helper frame. The helper
+    # frame is removed on logout, and code left inside it would stop with it.
+    loader = (
+        "<script>"
+        "var d = window.parent.document;"
+        "if (!window.parent.__raMenuLoaded) {"
+        "  window.parent.__raMenuLoaded = true;"
+        "  var s = d.createElement('script');"
+        f"  s.textContent = {json.dumps(_MENU_BUTTON_JS)};"
+        "  d.head.appendChild(s);"
+        "}"
+        "</script>"
+    )
+    components.html(loader, height=0)
+
+
 def show_user_sidebar(user):
     """
     Sidebar block with the signed-in name, role, and a logout button.
@@ -320,11 +371,26 @@ def show_user_sidebar(user):
     st.session_state["_sidebar_run"] = run_id
 
     with st.sidebar:
+        st.markdown(
+            """
+            <style>
+            /* Keep the hide-sidebar arrow visible, not only on hover */
+            [data-testid="stSidebarCollapseButton"],
+            [data-testid="stSidebarCollapseButton"] button,
+            [data-testid="stSidebarHeader"] button {
+                opacity: 1 !important;
+                visibility: visible !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
         st.markdown(f"**{user['name']}**")
         st.caption(f"Role: {user['role'].upper()}")
         if st.button("Log out", use_container_width=True, key="logout_btn"):
             st.session_state.pop("user", None)
             st.rerun()
+        _menu_button()
 
 
 def main():
@@ -333,7 +399,7 @@ def main():
     Shows the login form first. After sign-in, students are sent to the
     student report page in student_app.py. RAs are sent to ra_app.py.
     """
-    st.set_page_config(page_title="RA On-Shift Helper", page_icon="🏠", layout="wide")
+    st.set_page_config(page_title="RA On-Shift Helper", page_icon="🏠")
     st.session_state["_run_id"] = st.session_state.get("_run_id", 0) + 1
     user = require_login()
     if user is None:
