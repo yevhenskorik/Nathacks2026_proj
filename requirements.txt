@@ -3,3 +3,5 @@ pandas
 folium
 streamlit-folium
 supabase
+streamlit-autorefresh
+scikit-learn
