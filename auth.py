@@ -19,6 +19,7 @@ Settings come from .streamlit/secrets.toml (SUPABASE_URL, SUPABASE_KEY, RA_INVIT
 
 import hashlib
 import hmac
+import json
 import re
 import secrets
 
@@ -309,6 +310,85 @@ def require_login(allowed_roles=None):
     return user
 
 
+# JavaScript that adds a three-bar menu button to the page. It opens and closes the
+# sidebar, so the Log out block always has a way back after it is hidden.
+_MENU_BUTTON_JS = r"""
+(function () {
+  var doc = document;
+  var host = window;
+  if (host.__raMenuButton) { return; }
+  host.__raMenuButton = true;
+
+  var style = doc.createElement('style');
+  style.textContent =
+    '#ra-menu-btn{position:fixed;top:76px;left:12px;z-index:1000001;width:42px;height:42px;' +
+    'display:none;flex-direction:column;justify-content:center;align-items:center;gap:5px;' +
+    'background:#275d38;border:0;border-radius:4px;cursor:pointer;padding:0;' +
+    'box-shadow:0 2px 6px rgba(0,0,0,0.25);}' +
+    '#ra-menu-btn span{display:block;width:22px;height:3px;background:#ffffff;border-radius:1px;}' +
+    '#ra-menu-btn:hover{background:#1d4a2c;}';
+  doc.head.appendChild(style);
+
+  var btn = doc.createElement('button');
+  btn.id = 'ra-menu-btn';
+  btn.type = 'button';
+  btn.setAttribute('aria-label', 'Open or close the menu');
+  btn.innerHTML = '<span></span><span></span><span></span>';
+  doc.body.appendChild(btn);
+
+  function find(selectors) {
+    for (var i = 0; i < selectors.length; i++) {
+      var el = doc.querySelector(selectors[i]);
+      if (el) { return el.tagName === 'BUTTON' ? el : (el.querySelector('button') || el); }
+    }
+    return null;
+  }
+
+  var EXPAND = ['[data-testid="stExpandSidebarButton"]',
+                '[data-testid="stSidebarCollapsedControl"]',
+                '[data-testid="collapsedControl"]'];
+  var COLLAPSE = ['[data-testid="stSidebarCollapseButton"]'];
+
+  btn.addEventListener('click', function () {
+    var sidebar = doc.querySelector('[data-testid="stSidebar"]');
+    var collapsed = !!sidebar && (sidebar.getAttribute('data-collapsed') === 'true' ||
+                                  sidebar.getAttribute('aria-expanded') === 'false');
+    var target = find(collapsed ? EXPAND : COLLAPSE) || find(collapsed ? COLLAPSE : EXPAND);
+    if (target) { target.click(); }
+  });
+
+  // Show the button only while the sidebar is hidden. The arrow inside the sidebar closes it again.
+  host.setInterval(function () {
+    var sidebar = doc.querySelector('[data-testid="stSidebar"]');
+    var signedIn = !!sidebar && sidebar.textContent.indexOf('Log out') !== -1;
+    var hidden = !!sidebar && (sidebar.getAttribute('data-collapsed') === 'true' ||
+                               sidebar.getAttribute('aria-expanded') === 'false');
+    btn.style.display = (signedIn && hidden) ? 'flex' : 'none';
+  }, 300);
+})();
+"""
+
+
+def _menu_button():
+    """Adds the three-bar menu button once. Needs no setup in the page files."""
+    import streamlit.components.v1 as components
+
+    # The code runs inside the main page, not the small helper frame. The helper
+    # frame is removed on logout, and code left inside it would stop with it.
+    loader = (
+        "<script>"
+        "var d = window.parent.document;"
+        "if (!window.parent.__raMenuLoaded) {"
+        "  window.parent.__raMenuLoaded = true;"
+        "  var s = d.createElement('script');"
+        f"  s.textContent = {json.dumps(_MENU_BUTTON_JS)};"
+        "  d.head.appendChild(s);"
+        "}"
+        "</script>"
+    )
+    components.html(loader, height=0)
+
+
 def show_user_sidebar(user):
     """
     Sidebar block with the signed-in name, role, and a logout button.
@@ -320,11 +400,26 @@ def show_user_sidebar(user):
     st.session_state["_sidebar_run"] = run_id
 
     with st.sidebar:
+        st.markdown(
+            """
+            <style>
+            /* Keep the hide-sidebar arrow visible, not only on hover */
+            [data-testid="stSidebarCollapseButton"],
+            [data-testid="stSidebarCollapseButton"] button,
+            [data-testid="stSidebarHeader"] button {
+                opacity: 1 !important;
+                visibility: visible !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
         st.markdown(f"**{user['name']}**")
         st.caption(f"Role: {user['role'].upper()}")
         if st.button("Log out", use_container_width=True, key="logout_btn"):
             st.session_state.pop("user", None)
             st.rerun()
+        _menu_button()
 
 
 def main():
@@ -333,7 +428,7 @@ def main():
     Shows the login form first. After sign-in, students are sent to the
     student report page in student_app.py. RAs are sent to ra_app.py.
     """
-    st.set_page_config(page_title="RA On-Shift Helper", page_icon="🏠", layout="wide")
+    st.set_page_config(page_title="RA On-Shift Helper", page_icon="🏠")
     st.session_state["_run_id"] = st.session_state.get("_run_id", 0) + 1
     user = require_login()
     if user is None:
