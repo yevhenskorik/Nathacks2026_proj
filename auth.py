@@ -3,19 +3,18 @@ auth.py: login and account registration for the RA On-Shift Helper (Streamlit).
 
 Run the app from this file:  streamlit run auth.py
 
-Accounts live in two places:
-  1. SAMPLE_ACCOUNTS below, for quick testing. These never touch the database.
-  2. The Supabase table "users", filled by the Create account tab.
+Accounts live in the Supabase table "users", filled by the Create account tab.
+No passwords are stored in this file.
 
 Registration rules:
   - Everyone picks a role, Student or RA.
-  - RA accounts need the invite code stored in RA_INVITE_CODE.
+  - RA accounts need the invite code stored in the secret RA_INVITE_CODE.
 
 Passwords in the database are salted and hashed with PBKDF2. The plain text
 password is never stored.
 
 Run setup_users_table.sql once in the Supabase SQL editor to create the table.
-Credentials come from .streamlit/secrets.toml (SUPABASE_URL and SUPABASE_KEY).
+Settings come from .streamlit/secrets.toml (SUPABASE_URL, SUPABASE_KEY, RA_INVITE_CODE).
 """
 
 import hashlib
@@ -24,9 +23,6 @@ import re
 import secrets
 
 import streamlit as st
-
-# Invite code required to register an RA account. Change it here.
-RA_INVITE_CODE = "code1"
 
 USERS_TABLE = "users"
 USERNAME_PATTERN = re.compile(r"^[a-z0-9_]{3,20}$")
@@ -38,8 +34,12 @@ class AccountStoreError(Exception):
     """Raised when the account database cannot be reached."""
 
 
-def _hash(password: str) -> str:
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+def _ra_invite_code() -> str:
+    """Invite code for RA registration, read from secrets. Empty when not set."""
+    try:
+        return str(st.secrets.get("RA_INVITE_CODE", "")).strip()
+    except Exception:
+        return ""
 
 
 def _pbkdf2(password: str, salt_hex: str) -> str:
@@ -49,15 +49,6 @@ def _pbkdf2(password: str, salt_hex: str) -> str:
         bytes.fromhex(salt_hex),
         PBKDF2_ROUNDS,
     ).hex()
-
-
-# Test accounts. These work without the database.
-SAMPLE_ACCOUNTS = {
-    "student1": {"password_hash": _hash("student123"), "role": "student", "name": "Alex Student"},
-    "student2": {"password_hash": _hash("student456"), "role": "student", "name": "Sam Student"},
-    "ra1": {"password_hash": _hash("ra12345"), "role": "ra", "name": "Jordan (RA)"},
-    "ra2": {"password_hash": _hash("ra67890"), "role": "ra", "name": "Taylor (RA)"},
-}
 
 
 # ---------------------------------------------------------------------------
@@ -98,13 +89,6 @@ def authenticate(username: str, password: str):
     """
     username = username.strip().lower()
 
-    account = SAMPLE_ACCOUNTS.get(username)
-    if account is not None:
-        if hmac.compare_digest(account["password_hash"], _hash(password)):
-            name = username if account["role"] == "ra" else account["name"]
-            return {"username": username, "role": account["role"], "name": name}
-        return None
-
     row = _fetch_db_user(username)
     if row is None:
         # Hash anyway so response time does not reveal valid usernames.
@@ -134,12 +118,14 @@ def register_account(username, display_name, password, role, invite_code=""):
         return False, "Usernames use 3 to 20 lowercase letters, numbers, or underscores."
     if len(password) < MIN_PASSWORD_LENGTH:
         return False, f"Passwords need at least {MIN_PASSWORD_LENGTH} characters."
-    if role == "ra" and not hmac.compare_digest(
-        invite_code.strip().encode("utf-8"), RA_INVITE_CODE.encode("utf-8")
-    ):
-        return False, "The RA invite code is not valid."
-    if username in SAMPLE_ACCOUNTS:
-        return False, "This username is taken."
+    if role == "ra":
+        expected = _ra_invite_code()
+        if not expected:
+            return False, "RA registration is not set up. Add RA_INVITE_CODE to the secrets."
+        if not hmac.compare_digest(
+            invite_code.strip().encode("utf-8"), expected.encode("utf-8")
+        ):
+            return False, "The RA invite code is not valid."
 
     try:
         if _fetch_db_user(username) is not None:
@@ -243,7 +229,7 @@ def show_login():
         /* Login block, moved toward the center of the page */
         .block-container {
             max-width: 440px !important;
-            margin-top: 10vh !important;
+            margin-top: 12vh !important;
             margin-bottom: 100px !important;
             padding: 2rem 2rem 2.5rem 2rem !important;
             background-color: #ffffff;
@@ -293,7 +279,7 @@ def show_login():
         unsafe_allow_html=True,
     )
 
-    st.title("Residence Safety")
+    st.title("RA On-Shift Helper")
 
     sign_in_tab, register_tab = st.tabs(["Sign in", "Create account"])
     with sign_in_tab:
