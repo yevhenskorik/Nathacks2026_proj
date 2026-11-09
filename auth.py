@@ -1,48 +1,31 @@
 """
-auth.py: login and account registration for the RA On-Shift Helper (Streamlit).
+auth.py: login page for the RA On-Shift Helper (Streamlit).
 
 Run the app from this file:  streamlit run auth.py
 
-Accounts live in the Supabase table "users", filled by the Create account tab.
-No passwords are stored in this file.
-
-Registration rules:
-  - Everyone picks a role, Student or RA.
-  - RA accounts need the invite code stored in the secret RA_INVITE_CODE.
+There is no sign-up form. Accounts are rows in the Supabase table "users", added
+by the team. No passwords are stored in this file.
 
 Passwords in the database are salted and hashed with PBKDF2. The plain text
 password is never stored.
 
-Run setup_users_table.sql once in the Supabase SQL editor to create the table.
-Settings come from .streamlit/secrets.toml (SUPABASE_URL, SUPABASE_KEY, RA_INVITE_CODE).
+Settings come from .streamlit/secrets.toml (SUPABASE_URL and SUPABASE_KEY).
 """
 
 import hashlib
 import hmac
 import json
-import re
-import secrets
 
 import streamlit as st
 
 from ui import apply_theme, notice, page_title, site_footer
 
 USERS_TABLE = "users"
-USERNAME_PATTERN = re.compile(r"^[a-z0-9_]{3,20}$")
-MIN_PASSWORD_LENGTH = 6
 PBKDF2_ROUNDS = 200_000
 
 
 class AccountStoreError(Exception):
     """Raised when the account database cannot be reached."""
-
-
-def _ra_invite_code() -> str:
-    """Invite code for RA registration, read from secrets. Empty when not set."""
-    try:
-        return str(st.secrets.get("RA_INVITE_CODE", "")).strip()
-    except Exception:
-        return ""
 
 
 def _pbkdf2(password: str, salt_hex: str) -> str:
@@ -82,7 +65,7 @@ def _fetch_db_user(username: str):
 
 
 # ---------------------------------------------------------------------------
-# Login and registration logic
+# Login logic
 # ---------------------------------------------------------------------------
 
 def authenticate(username: str, password: str):
@@ -100,74 +83,19 @@ def authenticate(username: str, password: str):
 
     if hmac.compare_digest(row["password_hash"], _pbkdf2(password, row["salt"])):
         # RAs are shown by username. Students use their display name.
-# RAs are shown by username. Students use their display name.
         if row["role"] == "ra":
             name = row["username"]
         else:
             name = row.get("display_name") or row["username"]
-        
-        # ADD student_id TO THE RETURN DICTIONARY
-        return {
-            "username": row["username"], 
-            "role": row["role"], 
-            "name": name,
-            "student_id": row.get("student_id") or ""
-        }
+        return {"username": row["username"], "role": row["role"], "name": name}
     return None
-
-
-def register_account(username, display_name, password, role, invite_code="", student_id=""):
-    """Create an account in the database. Returns (success, message)."""
-    username = username.strip().lower()
-    display_name = display_name.strip() or username
-
-    if role not in ("student", "ra"):
-        return False, "Choose a role."
-    if role == "ra":
-        display_name = username
-    if not USERNAME_PATTERN.match(username):
-        return False, "Usernames use 3 to 20 lowercase letters, numbers, or underscores."
-    if len(password) < MIN_PASSWORD_LENGTH:
-        return False, f"Passwords need at least {MIN_PASSWORD_LENGTH} characters."
-    if role == "ra":
-        expected = _ra_invite_code()
-        if not expected:
-            return False, "RA registration is not set up. Add RA_INVITE_CODE to the secrets."
-        if not hmac.compare_digest(
-            invite_code.strip().encode("utf-8"), expected.encode("utf-8")
-        ):
-            return False, "The RA invite code is not valid."
-
-    try:
-        if _fetch_db_user(username) is not None:
-            return False, "This username is taken."
-
-        salt = secrets.token_hex(16)
-        _get_client().table(USERS_TABLE).insert(
-            {
-                "username": username,
-                "display_name": display_name,
-                "role": role,
-                "salt": salt,
-                "password_hash": _pbkdf2(password, salt),
-                "student_id": student_id,  # ADD THIS LINE
-            }
-        ).execute()
-    except AccountStoreError:
-        return False, "Could not reach the account database. Check .streamlit/secrets.toml."
-    except Exception as exc:
-        if "duplicate" in str(exc).lower() or "23505" in str(exc):
-            return False, "This username is taken."
-        return False, "Could not save the account. Check that the users table exists."
-
-    return True, "Account created. Open the Sign in tab to log in."
 
 
 # ---------------------------------------------------------------------------
 # Pages and helpers
 # ---------------------------------------------------------------------------
 
-def _render_sign_in_tab():
+def _render_sign_in_form():
     with st.form("login_form", clear_on_submit=False):
         username = st.text_input("Username", placeholder="")
         password = st.text_input("Password", type="password")
@@ -193,40 +121,8 @@ def _render_sign_in_tab():
         st.error("Incorrect username or password.")
 
 
-def _render_register_tab():
-    role_label = st.radio("I am a", ["Student", "RA"], horizontal=True, key="reg_role")
-    display_name = ""
-    if role_label == "Student":
-        display_name = st.text_input("Display name", key="reg_display_name")
-    username = st.text_input("Username", key="reg_username")
-    password = st.text_input("Password", type="password", key="reg_password")
-    confirm = st.text_input("Confirm password", type="password", key="reg_confirm")
-
-    invite_code = ""
-    if role_label == "RA":
-        invite_code = st.text_input("RA invite code", type="password", key="reg_invite")
-
-    if st.button("Create account", type="primary", use_container_width=True, key="reg_submit"):
-        if not username or not password:
-            st.warning("Enter a username and a password.")
-        elif password != confirm:
-            st.error("The two passwords do not match.")
-        else:
-            ok, message = register_account(
-                username,
-                display_name,
-                password,
-                "ra" if role_label == "RA" else "student",
-                invite_code,
-            )
-            if ok:
-                st.success(message)
-            else:
-                st.error(message)
-
-
 def show_login():
-    """Render the sign in and registration tabs. Sets st.session_state['user'] on login."""
+    """Render the sign in form. Sets st.session_state['user'] on login."""
     apply_theme("560px")  # same green and gold look as both dashboards
     st.markdown(
         """
@@ -235,7 +131,7 @@ def show_login():
         [data-testid="stForm"] { border: 0 !important; padding: 0 !important; }
         .stApp [data-testid="stTextInputRootElement"] { border-radius: 0 !important; }
 
-        /* Sign in button and tabs in the same green as the dashboards */
+        /* Sign in button in the same green as the dashboards */
         .stApp [data-testid="stBaseButton-primaryFormSubmit"],
         .stApp button[kind="primaryFormSubmit"] {
             background-color: #275D38; border: 1px solid #275D38; color: #FFFFFF;
@@ -246,12 +142,6 @@ def show_login():
         .stApp button[kind="primaryFormSubmit"]:hover {
             background-color: #1D4529; border-color: #1D4529; color: #FFFFFF;
         }
-        .stApp [data-baseweb="tab-highlight"],
-        .stApp .react-aria-SelectionIndicator { background-color: #275D38 !important; }
-        .stApp [data-testid="stTab"][aria-selected="true"],
-        .stApp [data-testid="stTab"][aria-selected="true"] p { color: #275D38 !important; }
-        .stApp button[data-baseweb="tab"][aria-selected="true"],
-        .stApp button[data-baseweb="tab"][aria-selected="true"] p { color: #275D38 !important; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -261,11 +151,8 @@ def show_login():
     notice("In an emergency, call <b>911</b>. This app is not watched in real time.")
 
     with st.container(key="card_login"):
-        sign_in_tab, register_tab = st.tabs(["Sign in", "Create account"])
-        with sign_in_tab:
-            _render_sign_in_tab()
-        with register_tab:
-            _render_register_tab()
+        st.subheader("Sign in")
+        _render_sign_in_form()
 
     site_footer()
 
