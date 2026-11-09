@@ -68,6 +68,10 @@ DANGER_PATTERNS = [
     r"being chased", r"assault", r"attacked me", r"afraid for my life",
     r"threatened (me|to)", r"won'?t let me leave",
 ]
+HARASSMENT_PATTERNS = [
+    r"harass", r"bully", r"stalk", r"slur", r"racist", r"sexist", r"homophobic",
+    r"won'?t leave me alone", r"unwanted contact", r"calling me names", r"making fun of",
+]
 
 SYSTEM_PROMPT = """You help Residence Assistants (RAs) at a university student residence sort incoming
 reports. You read ONE report and record a triage using the record_triage tool.
@@ -83,6 +87,7 @@ Urgency scale (1 to 5):
 
 Rules:
 - Judge the REAL situation, not just keywords. "My door is stuck" is not a fire door emergency.
+- Classify as 'harassment' if the text describes bullying, stalking, unwanted repeated contact, discrimination, or verbal abuse.
 - When the text suggests danger and you are unsure, choose the HIGHER urgency.
 - Set distress to true if the writer, or someone they mention, seems to be in danger or acute
   distress (fear for safety, abuse, self-harm, panic). This only flags the report for a human.
@@ -342,4 +347,35 @@ def triage_report(scrubbed_text, place, rules):
             "ai_reason": result["reason"],
             "ai_source": source,
         },
+    }
+def _rules_triage(text, rules):
+    """The no-AI answer, built from the keyword rules plus a small distress word list."""
+    category = KEYWORD_CATEGORY.get(rules.get("category"), "noise")
+    urgency = KEYWORD_URGENCY.get(rules.get("urgency"), 2)
+    distress = False
+    responder = None
+    reason = "Sorted by keyword rules (AI not used for this report)."
+    
+    if _matches(text, SELF_HARM_PATTERNS):
+        distress, category, urgency = True, "wellbeing", 5
+        reason = "Keyword safety net: mentions possible self-harm."
+    elif _matches(text, MEDICAL_PATTERNS):
+        distress, category, urgency, responder = True, "safety", 5, "RA"
+        reason = "Keyword safety net: possible medical emergency."
+    elif _matches(text, DANGER_PATTERNS):
+        distress, category, urgency = True, "safety", 5
+        reason = "Keyword safety net: mentions being followed, threatened or attacked."
+    elif _matches(text, HARASSMENT_PATTERNS):
+        category = "harassment"
+        urgency = max(urgency, 3)  # Harassment should always be at least a 3
+        reason = "Keyword safety net: mentions possible harassment or bullying."
+        
+    summary = " ".join(text.split())[:117] + ("..." if len(text) > 117 else "")
+    return {
+        "category": category,
+        "urgency": urgency,
+        "summary": summary,
+        "responder": responder or DEFAULT_RESPONDER[category],
+        "distress": distress,
+        "reason": reason,
     }
