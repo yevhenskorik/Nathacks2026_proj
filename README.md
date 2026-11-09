@@ -54,7 +54,7 @@ To run this project on your local machine:
 * **Renee** - AI Triage Integration, Prompt Engineering
 * **David** - UI/UX & Frontend Integration
 * **Angel** - Testing & Demo Preparation
-* **Shuoen** -Geospatial Mapping (Folium) & Location Data Pipeline
+* **Shuoen** - Geospatial Mapping (Folium) & Location Data Pipeline
 
 
 ## Links & Presentation Info
