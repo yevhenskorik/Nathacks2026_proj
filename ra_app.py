@@ -8,6 +8,7 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 from streamlit_folium import st_folium
 
+from ai_triage import detect_distress
 from places import MAP_CENTER, all_places, place_coords, place_label
 from storage import load_data, update_status
 from timeutil import OVERDUE_AFTER_MIN, human_age, now_naive, parse_times
@@ -41,7 +42,6 @@ TIME_RANGES = {
 }
 URGENCY_CHOICES = ["High", "Medium", "Low"]
 CATEGORY_CHOICES = ["Urgent Safety", "Maintenance", "Noise/Policy", "Harassment", "Wellbeing"]
-RESPONDER_CHOICES = ["RA", "facilities", "security", "counselling"]
 
 # Every filter widget has a key, so one button can put them all back
 FILTER_DEFAULTS = {
@@ -51,9 +51,7 @@ FILTER_DEFAULTS = {
     "f_sort": SORT_OPTIONS[0],
     "f_urgency": list(URGENCY_CHOICES),
     "f_category": [],
-    "f_responder": [],
     "f_overdue": False,
-    "f_distress": False,
     "f_search": "",
 }
 
@@ -95,6 +93,8 @@ def shown_text(row):
 def clean_text(value):
     return "" if value is None or pd.isna(value) else str(value).strip()
 
+
+
 def resolve_report(row_id):
     """Mark a report resolved, then re-read the database to be sure it really changed."""
     try:
@@ -114,6 +114,7 @@ def resolve_report(row_id):
             "This usually means the table has no UPDATE permission for the app "
             "(row level security). Ask Yevhen to check the Supabase policies.",
         )
+
 
 page_title(
     "RA Shift Handoff",
@@ -143,6 +144,9 @@ if "ai_urgency" not in df.columns:
 if "ai_distress" not in df.columns:
     df["ai_distress"] = False
 df["ai_distress"] = df["ai_distress"].fillna(False).astype(bool)
+# Safety net: also flag reports whose text matches the distress word list, so the flag
+# still shows if the database has no ai_distress column yet or the report is older.
+df["ai_distress"] = df["ai_distress"] | df.apply(lambda r: detect_distress(shown_text(r)), axis=1)
 df["ai_urgency"] = pd.to_numeric(df["ai_urgency"], errors="coerce")
 # One 1-to-5 priority for every report: the AI score if there is one, else from High/Medium/Low
 df["priority"] = df["ai_urgency"].fillna(df["urgency"].map(LABEL_TO_NUMBER)).fillna(1)
@@ -179,11 +183,7 @@ for name, value in FILTER_DEFAULTS.items():
 category_options = CATEGORY_CHOICES + sorted(
     c for c in df["category"].dropna().unique() if c not in CATEGORY_CHOICES
 )
-responder_options = RESPONDER_CHOICES + sorted(
-    r for r in df["ai_responder"].dropna().unique() if r not in RESPONDER_CHOICES
-)
 st.session_state["f_category"] = [c for c in st.session_state["f_category"] if c in category_options]
-st.session_state["f_responder"] = [r for r in st.session_state["f_responder"] if r in responder_options]
 
 with st.container(key="card_filters"):
     st.subheader("Filter and sort")
@@ -193,16 +193,15 @@ with st.container(key="card_filters"):
     r1[2].selectbox("Logged", list(TIME_RANGES), key="f_time")
     r1[3].selectbox("Sort by", SORT_OPTIONS, key="f_sort")
 
-    r2 = st.columns(3)
+    r2 = st.columns(2)
     r2[0].multiselect("Urgency", URGENCY_CHOICES, key="f_urgency")
     r2[1].multiselect("Category", category_options, key="f_category", placeholder="All categories")
-    r2[2].multiselect("Suggested responder", responder_options, key="f_responder", placeholder="Anyone")
 
-    r3 = st.columns([3, 1.3, 1.5, 1])
+    # Bottom-aligned so the checkbox and button line up with the search bar itself
+    r3 = st.columns([3, 1.3, 1.4, 1.3], vertical_alignment="bottom")
     r3[0].text_input("Search the reports", key="f_search", placeholder="Words in the report, summary or place")
     r3[1].checkbox("Overdue only", key="f_overdue")
-    r3[2].checkbox("Possible distress only", key="f_distress")
-    r3[3].button("Clear filters", key="clear_filters", on_click=reset_filters)
+    r3[3].button("Clear filters", key="clear_filters", on_click=reset_filters, use_container_width=True)
 
 filtered_df = df.copy()
 if st.session_state["f_location"] != "All locations":
@@ -211,15 +210,11 @@ if st.session_state["f_urgency"]:
     filtered_df = filtered_df[filtered_df["urgency"].isin(st.session_state["f_urgency"])]
 if st.session_state["f_category"]:
     filtered_df = filtered_df[filtered_df["category"].isin(st.session_state["f_category"])]
-if st.session_state["f_responder"]:
-    filtered_df = filtered_df[filtered_df["ai_responder"].isin(st.session_state["f_responder"])]
 window = TIME_RANGES[st.session_state["f_time"]]
 if window:
     filtered_df = filtered_df[filtered_df["age_min"] <= window]
 if st.session_state["f_overdue"]:
     filtered_df = filtered_df[filtered_df["overdue"]]
-if st.session_state["f_distress"]:
-    filtered_df = filtered_df[filtered_df["ai_distress"]]
 query = st.session_state["f_search"].strip().lower()
 if query:
     haystack = filtered_df.apply(
