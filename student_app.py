@@ -74,19 +74,6 @@ st.session_state.setdefault("ai_note", "")
 # =============== Screen 2: confirmation ===============
 if st.session_state["ref"]:
     page_title("Report received", f"Your reference number is <b>{st.session_state['ref']}</b>")
-    with st.container(key="card_next"):
-        st.subheader("What happens next")
-        st.markdown(
-            """
-            <div class="steps">
-              <div class="step done"><b>1</b>Received</div>
-              <div class="step"><b>2</b>An RA reviews it</div>
-              <div class="step"><b>3</b>Marked resolved</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.caption("Keep your reference number. You never need to give your name.")
     if st.session_state["distress"]:
         with st.container(key="card_support"):
             st.subheader("If you or someone else is in danger")
@@ -146,7 +133,6 @@ with st.container(key="card_what"):
         height=120,
         key=f"description_{st.session_state['map_id']}",
     )
-    st.caption("Please leave out names and phone numbers. A room number is fine.")
 
 with st.container(key="card_pin"):
     st.subheader("3. Pin the exact spot (optional)")

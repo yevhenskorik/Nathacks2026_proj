@@ -8,7 +8,6 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 from streamlit_folium import st_folium
 
-from ai_triage import detect_distress
 from places import MAP_CENTER, all_places, place_coords, place_label
 from storage import load_data, update_status
 from timeutil import OVERDUE_AFTER_MIN, human_age, now_naive, parse_times
@@ -144,9 +143,6 @@ if "ai_urgency" not in df.columns:
 if "ai_distress" not in df.columns:
     df["ai_distress"] = False
 df["ai_distress"] = df["ai_distress"].fillna(False).astype(bool)
-# Safety net: also flag reports whose text matches the distress word list, so the flag
-# still shows if the database has no ai_distress column yet or the report is older.
-df["ai_distress"] = df["ai_distress"] | df.apply(lambda r: detect_distress(shown_text(r)), axis=1)
 df["ai_urgency"] = pd.to_numeric(df["ai_urgency"], errors="coerce")
 # One 1-to-5 priority for every report: the AI score if there is one, else from High/Medium/Low
 df["priority"] = df["ai_urgency"].fillna(df["urgency"].map(LABEL_TO_NUMBER)).fillna(1)
@@ -316,7 +312,7 @@ def render_triage_board(filtered_df, sort_choice):
             card_key = f"card_incident_{uid}"
 
         with st.container(key=card_key):
-            col_a, col_b = st.columns([5, 1])
+            col_a, col_b = st.columns([5, 1], vertical_alignment="center")
 
             with col_a:
                 distress_badge = '<span class="badge distress">POSSIBLE DISTRESS</span>' if row["ai_distress"] else ""
@@ -351,6 +347,7 @@ def render_triage_board(filtered_df, sort_choice):
                     st.button(
                         "Resolve", key=f"resolve_{uid}", type="primary",
                         on_click=resolve_report, args=(row_id,),
+                        use_container_width=True,
                     )
                 else:
                     st.markdown('<span class="badge done">RESOLVED</span>', unsafe_allow_html=True)
