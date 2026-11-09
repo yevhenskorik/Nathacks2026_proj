@@ -1,52 +1,63 @@
-# RA On-Shift Helper
+# RA On-Shift Helper 🛡️
 
-**natHacks 2026 Submission – Defense & Security (Infrastructure & Operational Security)**
+**NatHacks 2026 Submission**  
+An intelligent incident management and AI triage platform for university residences.
 
-RA On-Shift Helper is a lightweight, mobile-responsive web application designed to bridge the gap between student residence incident reporting and Residence Assistant (RA) shift handoffs. It provides students with a confidential way to report maintenance, noise, and safety hazards, while giving RAs an interactive, geospatial dashboard to triage hotspots during their rounds.
+**GitHub Repository:** [https://github.com/yevhenskorik/Nathacks2026_proj](https://github.com/yevhenskorik/Nathacks2026_proj)
 
-## The Problem
-Residence safety and maintenance relies heavily on fragmented communication. Students hesitate to report issues due to privacy concerns or clunky web portals, and RAs starting their shifts often inherit a disorganized list of overnight logs without a clear understanding of spatial hotspots (e.g., a clustered pattern of propped doors in a specific stairwell).
+---
 
-## The Solution
-*   📱 **Student Mobile Interface:** A streamlined, mobile-friendly reporting tool that allows students to document incidents, tag specific building zones, and drop custom location pins via an interactive map.
+## 💡 The Concept
+During community support shifts, Residence Assistants (RAs) face a chaotic influx of texts, calls, and walk-ups. Critical emergencies can easily get buried under routine maintenance requests. 
 
-*   🗺️ **Interactive Patrol Map:** RAs access a live dashboard with an OpenStreetMap overlay (powered by Folium) that clusters incidents over the exact footprints of the residence towers, color-coded by urgency.
-*   📊 **Shift Handoff Dashboard:** Visualizes incident hotspots by zone and allows RAs to filter by building or status, ensuring a clean transition between shifts.
+**RA On-Shift Helper** solves this by providing a two-sided platform:
+1. **Frictionless Student Portal:** Residents can instantly report issues and drop exact map pins without creating an account.
+2. **Secure RA Dashboard:** An AI triage engine (powered by Claude with a local Ollama fallback) analyzes incoming reports, assigns an urgency score (1-5), and flags potential distress like harassment or medical emergencies. This ensures life-safety incidents immediately jump to the top of the RA's queue.
 
-## Tech Stack
-*   **Frontend & Framework:** Streamlit (Python)
-*   **Mapping & Geospatial:** Folium, `streamlit-folium`
-*   **Data Processing & Storage:** Pandas, Regex (Local CSV storage for hackathon prototype)
+## 🚀 How to Access the Software
 
-## Project Structure
-*   `app.py` — The main Streamlit application containing the UI rendering and map logic.
-*   `privacy_triage.py` — The local text-processing engine that categorizes urgency and scrubs PII.
-*   `storage.py` — Handles reading, saving, and updating incident records.
-*   `incidents.csv` — The local database (pre-populated with 43 simulated overnight incidents for demonstration).
-*   `requirements.txt` — Required Python dependencies.
+### For Judges (Live Demo)
+You can access the live, deployed version of our application here: 
+* **Live App:** `[Insert your Streamlit Community Cloud URL here]`
 
-## How to Run Locally
+To explore the RA Dashboard, please use our test credentials:
+* **Username:** `radavid`
+* **Password:** `demo123`
+
+### Run Locally (For Developers)
+To run this project on your local machine:
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
-   cd YOUR_REPO_NAME
+   git clone https://github.com/yevhenskorik/RA-Onshift-Helper.git
+   cd RA-Onshift-Helper
    ```
-
-2. **Install the dependencies:**
-   Make sure you have Python installed, then run:
+2. **Install dependencies:**
    ```bash
    pip install -r requirements.txt
    ```
+3. **Configure Secrets:**
+   Create a `.streamlit/secrets.toml` file in the root directory and add your API keys:
+   ```toml
+   SUPABASE_URL = "your_supabase_url"
+   SUPABASE_KEY = "your_supabase_key"
+   ANTHROPIC_API_KEY = "your_anthropic_api_key"
+   RA_INVITE_CODE = "your_invite_code"
+   ```
+4. **Run the application:**
+   ```bash
+   streamlit run auth.py
+   ```
 
-3. **Start the application RA:**
-   ```bash
-   streamlit run ra_app.py
-   ```
-4. **Start the application as student:**
-   ```bash
-   streamlit run student_app.py
-   ```
-5. **Test the app:**
-   *   The app will automatically open in your browser at `http://localhost:8501`.
-   *   Use the sidebar to toggle between the **Student Report (Phone)** view and the **RA Dashboard** view.
+## 👥 Credits
+* **Yevhen** - Database Architecture, Git Workflows
+* **Renee** - AI Triage Integration, Prompt Engineering
+* **David** - UI/UX & Frontend Integration
+* **Angel** - Testing & Demo Preparation
+* **Shuoen** -Geospatial Mapping (Folium) & Location Data Pipeline
+
+
+## 🔗 Links & Presentation Info
+* **Devpost Submission:** https://ra-onshift.streamlit.app/
+* **Pitch Presentation:** Delivered live in-person at NatHacks 2026.
+* **Tech Stack:** Python, Streamlit, Supabase, Folium, Anthropic Claude, Ollama, Pandas.
