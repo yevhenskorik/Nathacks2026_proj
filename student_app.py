@@ -15,6 +15,7 @@ from storage import load_data, save_data
 from ui import apply_theme, notice, page_title, site_footer
 
 MAP_CENTER = list(MAP_CENTER_TUPLE)
+MAX_REPORT_CHARS = 200  # longest report a student can submit
 
 
 def meters_between(lat1, lon1, lat2, lon2):
@@ -131,6 +132,7 @@ with st.container(key="card_what"):
         "Describe the issue",
         placeholder="Include the exact room number if you know it...",
         height=120,
+        max_chars=MAX_REPORT_CHARS,
         key=f"description_{st.session_state['map_id']}",
     )
 
@@ -168,6 +170,8 @@ with st.container(key="card_pin"):
 if st.button("Submit report", type="primary", key="submit_btn"):
     if not raw_text.strip():
         st.warning("Please describe what happened first.")
+    elif len(raw_text) > MAX_REPORT_CHARS:
+        st.warning(f"Please keep the report under {MAX_REPORT_CHARS} characters.")
     else:
         result = process_incident(raw_text)  # removes phone numbers etc. + keyword rules
         place = building if place_type == "Shared space" else f"{building}, {floor}, {zone}"
