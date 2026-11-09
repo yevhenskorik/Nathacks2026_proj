@@ -100,15 +100,23 @@ def authenticate(username: str, password: str):
 
     if hmac.compare_digest(row["password_hash"], _pbkdf2(password, row["salt"])):
         # RAs are shown by username. Students use their display name.
+# RAs are shown by username. Students use their display name.
         if row["role"] == "ra":
             name = row["username"]
         else:
             name = row.get("display_name") or row["username"]
-        return {"username": row["username"], "role": row["role"], "name": name}
+        
+        # ADD student_id TO THE RETURN DICTIONARY
+        return {
+            "username": row["username"], 
+            "role": row["role"], 
+            "name": name,
+            "student_id": row.get("student_id") or ""
+        }
     return None
 
 
-def register_account(username, display_name, password, role, invite_code=""):
+def register_account(username, display_name, password, role, invite_code="", student_id=""):
     """Create an account in the database. Returns (success, message)."""
     username = username.strip().lower()
     display_name = display_name.strip() or username
@@ -142,6 +150,7 @@ def register_account(username, display_name, password, role, invite_code=""):
                 "role": role,
                 "salt": salt,
                 "password_hash": _pbkdf2(password, salt),
+                "student_id": student_id,  # ADD THIS LINE
             }
         ).execute()
     except AccountStoreError:
