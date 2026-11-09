@@ -3,7 +3,7 @@
 **NatHacks 2026 Submission**  
 An intelligent incident management and AI triage platform for university residences.
 
-**GitHub Repository:** [https://github.com/yevhenskorik/Nathacks2026_proj](https://github.com/yevhenskorik/Nathacks2026_proj)
+**GitHub Repository:** [https://github.com/yevhenskorik/RA-Onshift-Helper.git](https://github.com/yevhenskorik/RA-Onshift-Helper.git)
 
 ---
 
@@ -18,7 +18,7 @@ During community support shifts, Residence Assistants (RAs) face a chaotic influ
 
 ### For Judges (Live Demo)
 You can access the live, deployed version of our application here: 
-* **Live App:** `[Insert your Streamlit Community Cloud URL here]`
+* **Live App:** `https://ra-onshift.streamlit.app/`
 
 To explore the RA Dashboard, please use our test credentials:
 * **Username:** `radavid`
