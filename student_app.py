@@ -12,6 +12,13 @@ from places import (MAP_CENTER as MAP_CENTER_TUPLE, SHARED_FLOOR, SHARED_SPACES,
 from ai_triage import triage_report
 from privacy_triage import process_incident
 from storage import load_data, save_data
+from timeutil import now_local
+
+try:
+    from storage import get_status
+except ImportError:  # an older storage.py: the tracker then just stays on step 1
+    def get_status(_report_id):
+        return None
 from ui import apply_theme, notice, page_title, site_footer
 
 MAP_CENTER = list(MAP_CENTER_TUPLE)
@@ -68,25 +75,36 @@ st.session_state.setdefault("lat", None)
 st.session_state.setdefault("lon", None)
 st.session_state.setdefault("map_id", 0)
 st.session_state.setdefault("ref", None)
+st.session_state.setdefault("report_id", None)
 st.session_state.setdefault("distress", False)
 st.session_state.setdefault("ai_note", "")
+
+STATUS_STAGE = {"Open": 1, "In review": 2, "Resolved": 3}
+STEP_LABELS = ["Received", "An RA is reviewing it", "Resolved"]
+STAGE_MESSAGE = {
+    1: "Waiting for an RA to pick it up. This page updates by itself, so you can leave it open.",
+    2: "An RA has seen your report and is looking into it.",
+    3: "Your report was marked resolved. Thank you for speaking up.",
+}
+
+
+@st.fragment(run_every="5s")
+def live_tracker(report_id):
+    """Shows where the report really is. Checks the database every 5 seconds."""
+    status = get_status(report_id) if report_id is not None else None
+    stage = STATUS_STAGE.get(status, 1)
+    boxes = "".join(
+        f'<div class="step{" done" if n <= stage else ""}"><b>{"&#10003;" if n <= stage else n}</b>{label}</div>'
+        for n, label in enumerate(STEP_LABELS, start=1)
+    )
+    st.markdown(f'<div class="steps">{boxes}</div>', unsafe_allow_html=True)
+    note = STAGE_MESSAGE[stage] if status else "We cannot check the status right now. Your report is saved."
+    st.caption(f"{note} Last checked {now_local():%H:%M:%S}.")
+
 
 # =============== Screen 2: confirmation ===============
 if st.session_state["ref"]:
     page_title("Report received", f"Your reference number is <b>{st.session_state['ref']}</b>")
-    with st.container(key="card_next"):
-        st.subheader("What happens next")
-        st.markdown(
-            """
-            <div class="steps">
-              <div class="step done"><b>1</b>Received</div>
-              <div class="step"><b>2</b>An RA reviews it</div>
-              <div class="step"><b>3</b>Marked resolved</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.caption("Keep your reference number. You never need to give your name.")
     if st.session_state["distress"]:
         with st.container(key="card_support"):
             st.subheader("If you or someone else is in danger")
@@ -96,6 +114,10 @@ if st.session_state["ref"]:
                 unsafe_allow_html=True,
             )
             # Add your campus support lines here after you confirm them with your RA.
+    with st.container(key="card_next"):
+        st.subheader("What happens next")
+        live_tracker(st.session_state["report_id"])
+        st.caption("Keep your reference number. You never need to give your name.")
     if debug_on():
         st.caption("Developer note. Sorted by: " + st.session_state["ai_note"])
     notice(
@@ -104,6 +126,7 @@ if st.session_state["ref"]:
     )
     if st.button("Report another issue", key="again_btn"):
         st.session_state["ref"] = None
+        st.session_state["report_id"] = None
         st.session_state["distress"] = False
         st.session_state["lat"] = None
         st.session_state["lon"] = None
@@ -146,7 +169,6 @@ with st.container(key="card_what"):
         height=120,
         key=f"description_{st.session_state['map_id']}",
     )
-    st.caption("Please leave out names and phone numbers. A room number is fine.")
 
 with st.container(key="card_pin"):
     st.subheader("3. Pin the exact spot (optional)")
@@ -205,7 +227,14 @@ if st.button("Submit report", type="primary", key="submit_btn"):
         st.session_state["ai_note"] = triage["source"] + (
             f" ({triage['error']})" if triage["error"] else ""
         )
-        st.session_state["ref"] = f"R-{len(load_data()):04d}"
+        report_id = None if saved is True else saved  # the new report's id, when the database gives one
+        st.session_state["report_id"] = report_id
+        if isinstance(report_id, int):
+            st.session_state["ref"] = f"R-{report_id:04d}"
+        elif report_id:
+            st.session_state["ref"] = f"R-{str(report_id)[:6].upper()}"
+        else:
+            st.session_state["ref"] = f"R-{len(load_data()):04d}"
         st.rerun()
 
 site_footer()

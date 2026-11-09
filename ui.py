@@ -92,7 +92,13 @@ header[data-testid="stHeader"]::before {
 .badge.low { background: #6B6B6B; color: #FFFFFF; }
 .badge.done { background: #E8F0EA; color: var(--green); border: 1px solid var(--green); }
 
+.badge.review { background: #FFF3B0; color: #222222; border: 1px solid var(--gold); }
 .badge.overdue { background: #FFFFFF; color: #B71C1C; border: 1px solid #B71C1C; }
+.badge.distress { background: #B71C1C; color: #FFFFFF; }
+[class*="st-key-card_incident_distress"] { border: 2px solid #B71C1C; border-top: 6px solid #B71C1C; background: #FFF5F5; }
+.ai-note { font-size: 0.9rem; color: var(--muted); margin: 0.2rem 0 0.4rem 0; }
+.ai-note b { color: var(--text); }
+
 .alert-bar {
     border-left: 6px solid #B71C1C; background: #FDECEC; color: var(--text);
     padding: 0.8rem 1rem; margin-bottom: 1rem; font-weight: 500;

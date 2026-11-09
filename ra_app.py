@@ -1,5 +1,4 @@
 """RA PORTAL.  Run with:  python -m streamlit run ra_app.py --server.port 8502"""
-import hmac
 import html
 
 import folium
@@ -13,7 +12,6 @@ from places import MAP_CENTER, all_places, place_coords, place_label
 from storage import load_data, update_status
 from timeutil import OVERDUE_AFTER_MIN, human_age, now_naive, parse_times
 from ui import apply_theme, page_title, site_footer
-
 
 apply_theme("1180px")
 
@@ -42,16 +40,19 @@ TIME_RANGES = {
 }
 URGENCY_CHOICES = ["High", "Medium", "Low"]
 CATEGORY_CHOICES = ["Urgent Safety", "Maintenance", "Noise/Policy", "Harassment", "Wellbeing"]
+RESPONDER_CHOICES = ["RA", "facilities", "security", "counselling"]
 
 # Every filter widget has a key, so one button can put them all back
 FILTER_DEFAULTS = {
     "f_location": "All locations",
-    "f_status": "Open",
+    "f_status": "Not resolved",
     "f_time": "All time",
     "f_sort": SORT_OPTIONS[0],
     "f_urgency": list(URGENCY_CHOICES),
     "f_category": [],
+    "f_responder": [],
     "f_overdue": False,
+    "f_distress": False,
     "f_search": "",
 }
 
@@ -70,7 +71,7 @@ def sort_incidents(frame, how):
     if how == "Highest urgency first":
         return frame.sort_values(["priority", "timestamp"], ascending=[False, True])
     if how == "Waiting longest (open reports)":
-        return frame.assign(_open=(frame["status"] == "Open")).sort_values(
+        return frame.assign(_open=(frame["status"] != "Resolved")).sort_values(
             ["_open", "age_min"], ascending=[False, False]
         ).drop(columns="_open")
     # Smart order: possible distress, then overdue, then urgency, then oldest first
@@ -94,23 +95,22 @@ def clean_text(value):
     return "" if value is None or pd.isna(value) else str(value).strip()
 
 
-
-def resolve_report(row_id):
-    """Mark a report resolved, then re-read the database to be sure it really changed."""
+def change_status(row_id, new_status, ok_message):
+    """Change a report's status, then re-read the database to be sure it really changed."""
     try:
-        update_status(row_id, "Resolved")
+        update_status(row_id, new_status)
     except Exception:
         pass  # the check below reports the problem
     fresh = load_data()
     saved = len(fresh) and "id" in fresh.columns and (
-        fresh.loc[fresh["id"] == row_id, "status"] == "Resolved"
+        fresh.loc[fresh["id"] == row_id, "status"] == new_status
     ).any()
     if saved:
-        st.session_state["flash"] = ("ok", "Report marked as resolved.")
+        st.session_state["flash"] = ("ok", ok_message)
     else:
         st.session_state["flash"] = (
             "error",
-            "The database did not save the change, so the report is still open. "
+            "The database did not save the change, so the report keeps its old status. "
             "This usually means the table has no UPDATE permission for the app "
             "(row level security). Ask Yevhen to check the Supabase policies.",
         )
@@ -158,7 +158,7 @@ df["age_min"] = (now_naive() - df["timestamp"]).dt.total_seconds() / 60
 limits = df["urgency"].map(OVERDUE_AFTER_MIN).fillna(OVERDUE_AFTER_MIN["Low"])
 df["overdue"] = (df["status"] == "Open") & (df["age_min"] > limits)
 
-distress_open = int((df["ai_distress"] & (df["status"] == "Open")).sum())
+distress_open = int((df["ai_distress"] & (df["status"] != "Resolved")).sum())
 if distress_open:
     st.markdown(
         f'<div class="alert-bar"><b>{distress_open} possible distress report(s) need immediate review.</b> '
@@ -183,25 +183,30 @@ for name, value in FILTER_DEFAULTS.items():
 category_options = CATEGORY_CHOICES + sorted(
     c for c in df["category"].dropna().unique() if c not in CATEGORY_CHOICES
 )
+responder_options = RESPONDER_CHOICES + sorted(
+    r for r in df["ai_responder"].dropna().unique() if r not in RESPONDER_CHOICES
+)
 st.session_state["f_category"] = [c for c in st.session_state["f_category"] if c in category_options]
+st.session_state["f_responder"] = [r for r in st.session_state["f_responder"] if r in responder_options]
 
 with st.container(key="card_filters"):
     st.subheader("Filter and sort")
     r1 = st.columns(4)
     r1[0].selectbox("Location", ["All locations"] + all_places(), key="f_location")
-    r1[1].selectbox("Status", ["Open", "Resolved", "All"], key="f_status")
+    r1[1].selectbox("Status", ["Not resolved", "Open", "In review", "Resolved", "All"], key="f_status")
     r1[2].selectbox("Logged", list(TIME_RANGES), key="f_time")
     r1[3].selectbox("Sort by", SORT_OPTIONS, key="f_sort")
 
-    r2 = st.columns(2)
+    r2 = st.columns(3)
     r2[0].multiselect("Urgency", URGENCY_CHOICES, key="f_urgency")
     r2[1].multiselect("Category", category_options, key="f_category", placeholder="All categories")
+    r2[2].multiselect("Suggested responder", responder_options, key="f_responder", placeholder="Anyone")
 
-    # Bottom-aligned so the checkbox and button line up with the search bar itself
-    r3 = st.columns([3, 1.3, 1.4, 1.3], vertical_alignment="bottom")
+    r3 = st.columns([3, 1.3, 1.5, 1])
     r3[0].text_input("Search the reports", key="f_search", placeholder="Words in the report, summary or place")
     r3[1].checkbox("Overdue only", key="f_overdue")
-    r3[3].button("Clear filters", key="clear_filters", on_click=reset_filters, use_container_width=True)
+    r3[2].checkbox("Possible distress only", key="f_distress")
+    r3[3].button("Clear filters", key="clear_filters", on_click=reset_filters)
 
 filtered_df = df.copy()
 if st.session_state["f_location"] != "All locations":
@@ -210,11 +215,15 @@ if st.session_state["f_urgency"]:
     filtered_df = filtered_df[filtered_df["urgency"].isin(st.session_state["f_urgency"])]
 if st.session_state["f_category"]:
     filtered_df = filtered_df[filtered_df["category"].isin(st.session_state["f_category"])]
+if st.session_state["f_responder"]:
+    filtered_df = filtered_df[filtered_df["ai_responder"].isin(st.session_state["f_responder"])]
 window = TIME_RANGES[st.session_state["f_time"]]
 if window:
     filtered_df = filtered_df[filtered_df["age_min"] <= window]
 if st.session_state["f_overdue"]:
     filtered_df = filtered_df[filtered_df["overdue"]]
+if st.session_state["f_distress"]:
+    filtered_df = filtered_df[filtered_df["ai_distress"]]
 query = st.session_state["f_search"].strip().lower()
 if query:
     haystack = filtered_df.apply(
@@ -228,18 +237,22 @@ if query:
 
 # Status is applied last. scope_df keeps open AND resolved, so the Resolved tile is honest.
 scope_df = filtered_df
-if st.session_state["f_status"] != "All":
-    filtered_df = scope_df[scope_df["status"] == st.session_state["f_status"]]
+status_choice = st.session_state["f_status"]
+if status_choice == "Not resolved":
+    filtered_df = scope_df[scope_df["status"] != "Resolved"]
+elif status_choice != "All":
+    filtered_df = scope_df[scope_df["status"] == status_choice]
 
 st.caption(f"Showing {len(filtered_df)} of {len(df)} reports")
 
 # --- Summary tiles ---
-m1, m2, m3, m4, m5 = st.columns(5)
+m1, m2, m3, m4, m5, m6 = st.columns(6)
 m1.metric("Shown", len(filtered_df))
 m2.metric("Possible distress", int(filtered_df["ai_distress"].sum()))
 m3.metric("High urgency", int((filtered_df["urgency"] == "High").sum()))
 m4.metric("Overdue", int(filtered_df["overdue"].sum()))
-m5.metric("Resolved", int((scope_df["status"] == "Resolved").sum()))
+m5.metric("In review", int((scope_df["status"] == "In review").sum()))
+m6.metric("Resolved", int((scope_df["status"] == "Resolved").sum()))
 
 # --- DRAW MAP ---
 st.subheader("Patrol map")
@@ -306,7 +319,7 @@ def render_triage_board(filtered_df, sort_choice):
         if pd.notna(row["ai_urgency"]):
             label = f"{label} {int(row['ai_urgency'])}/5"
         logged = row["timestamp"].strftime("%b %d, %H:%M") if pd.notna(row["timestamp"]) else "unknown time"
-        open_for = f" · Open for {human_age(row['age_min'])}" if row["status"] == "Open" else ""
+        open_for = f" · Open for {human_age(row['age_min'])}" if row["status"] != "Resolved" else ""
 
         if row["ai_distress"]:
             card_key = f"card_incident_distress_{uid}"
@@ -346,11 +359,18 @@ def render_triage_board(filtered_df, sort_choice):
                     st.markdown(f'<div class="ai-note">{" · ".join(bits)}</div>', unsafe_allow_html=True)
 
             with col_b:
+                row_id = row["id"].item() if hasattr(row["id"], "item") else row["id"]
                 if row["status"] == "Open":
-                    row_id = row["id"].item() if hasattr(row["id"], "item") else row["id"]
+                    st.button(
+                        "Start review", key=f"review_{uid}",
+                        on_click=change_status, args=(row_id, "In review", "Report marked as in review. The student can see it."),
+                    )
+                if row["status"] == "In review":
+                    st.markdown('<span class="badge review">IN REVIEW</span>', unsafe_allow_html=True)
+                if row["status"] != "Resolved":
                     st.button(
                         "Resolve", key=f"resolve_{uid}", type="primary",
-                        on_click=resolve_report, args=(row_id,),
+                        on_click=change_status, args=(row_id, "Resolved", "Report marked as resolved. The student can see it."),
                     )
                 else:
                     st.markdown('<span class="badge done">RESOLVED</span>', unsafe_allow_html=True)

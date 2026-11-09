@@ -45,6 +45,14 @@ def load_data():
     return empty_df
 
 
+def _inserted_id(response):
+  """The id Supabase gave the new row, or None."""
+  try:
+    return response.data[0].get("id")
+  except Exception:
+    return None
+
+
 def save_data(building, floor, zone, raw_text, scrubbed_text, category, urgency,
               lat=None, lon=None, extra=None):
   """Saves a new student report to Supabase with error catching.
@@ -71,18 +79,29 @@ def save_data(building, floor, zone, raw_text, scrubbed_text, category, urgency,
   }
 
   try:
-    supabase.table("incidents").insert({**new_row, **(extra or {})}).execute()
-    return True
+    response = supabase.table("incidents").insert({**new_row, **(extra or {})}).execute()
+    return _inserted_id(response) or True  # the new report's id, so the student can follow it
   except Exception as first_error:
     if extra:
       try:  # most likely the AI columns are missing: save the basic report anyway
-        supabase.table("incidents").insert(new_row).execute()
-        return True
+        response = supabase.table("incidents").insert(new_row).execute()
+        return _inserted_id(response) or True
       except Exception as e:
         st.error(f"⚠️ Failed to submit report to database: {e}")
         return False
     st.error(f"⚠️ Failed to submit report to database: {first_error}")
     return False
+
+
+def get_status(row_id):
+  """Current status ('Open', 'In review' or 'Resolved') of one report, or None if unknown."""
+  if supabase is None or row_id is None:
+    return None
+  try:
+    response = supabase.table("incidents").select("status").eq("id", row_id).execute()
+    return response.data[0]["status"] if response.data else None
+  except Exception:
+    return None
 
 
 def update_status(row_id, new_status):
