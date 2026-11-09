@@ -18,7 +18,7 @@ During community support shifts, Residence Assistants (RAs) face a chaotic influ
 
 ### For Judges (Live Demo)
 You can access the live, deployed version of our application here: 
-* **Live App:** `https://ra-onshift.streamlit.app/`
+* **Live App:** `https://ra-onshift.streamlit.app/`(https://ra-onshift.streamlit.app/)
 
 To explore the RA Dashboard, please use our test credentials:
 * **Username:** `radavid`
